@@ -1,0 +1,44 @@
+site_name: artifactkit
+site_description: Shared artifact-creation harness for agentic workflows
+repo_url: https://github.com/CHANGE-ME/artifactkit
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+    - scheme: slate
+      primary: teal
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Architecture: architecture.md
+  - Observability: observability.md
+  - API reference: api-reference.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.details

@@ -1,0 +1,52 @@
+[project]
+name = "agent-artifact-kit"
+version = "0.1.0"
+description = "Shared artifact-creation harness for agentic workflows: renders docx/pptx/xlsx/pdf or delivers arbitrary files, with pluggable destinations and verified writes. Installs as agent-artifact-kit, imports as artifactkit."
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Dipak Rimal" },
+]
+keywords = ["agents", "artifacts", "docx", "pptx", "xlsx", "pdf", "strands", "mcp", "s3"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business",
+]
+dependencies = [
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "openpyxl>=3.1.0",
+    "reportlab>=4.2.0",
+    "pypdf>=4.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/drimal/artifactkit"
+Issues = "https://github.com/drimal/artifactkit/issues"
+
+[project.optional-dependencies]
+s3 = ["boto3>=1.34.0"]
+strands = ["strands-agents"]
+mcp = ["mcp>=1.0.0,<2.0.0"]  # v2 renamed FastMCP -> MCPServer; adapters/mcp_server.py targets the v1 API
+all = ["agent-artifact-kit[s3,strands,mcp]"]
+dev = ["pytest>=8.0.0", "pytest-cov", "build", "twine"]
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["artifactkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
