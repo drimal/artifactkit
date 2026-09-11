@@ -5,15 +5,36 @@ template's slide_layouts (case-insensitive). If no template is given,
 python-pptx's default template is used and layout falls back to index
 lookup against its five standard layouts.
 
-Theming: PresentationSpec.theme, when set, is applied per slide after
-placeholders are filled. Title-type slides ("title" / "section_header"
-layouts) get a gradient hero background with light title text and a
-decorative corner shape -- the bold, attention-grabbing treatment a
-human designer would give an opening/section slide. Every other slide
-gets a clean, readable solid background with a thin accent bar --
-content slides are for reading, not for competing with the content.
-This mirrors how real decks differentiate title slides from content
-slides, rather than applying one flat look to every slide uniformly.
+Placeholder targeting: Slide.placeholders keys are resolved in this
+order, so old specs keep working exactly as before while new specs
+can target a custom template precisely instead of guessing:
+  1. "title" -- the layout's title placeholder (unchanged, most common case)
+  2. "idx:N" -- the placeholder with that exact placeholder_format.idx,
+     found via inspect_template()
+  3. an exact placeholder shape name (e.g. "Content Placeholder 2"),
+     also found via inspect_template()
+  4. anything left over fills remaining, unfilled placeholders in
+     declaration order -- the original positional-fill behavior,
+     preserved for backward compatibility and for the common case of
+     a single title+body slide where precision doesn't matter.
+
+Template introspection: inspect_template(path) reads a .pptx file and
+reports every layout's name, index, and placeholders (idx, name, type)
+without rendering anything -- call it before building a spec that
+targets a custom template, rather than guessing what's in it.
+
+Theming: PresentationSpec.theme is applied only when template_path is
+NOT set. A custom template already carries its own intentional design;
+forcing a gradient/accent-bar theme on top of it would fight that
+design rather than respect it. When both are set, theme is skipped
+with a warning log, not silently -- so the "why didn't my theme show
+up" question has an answer in the logs.
+
+Title-type slides ("title" / "section_header" layouts) get a gradient
+hero background with light title text and a decorative corner shape
+when theme is active -- the bold, attention-grabbing treatment a human
+designer would give an opening/section slide. Every other slide gets a
+clean, readable solid background with a thin accent bar.
 
 All of this is pure python-pptx: solid/gradient fills, font
 color/size/weight, and preset auto-shapes. No external rendering
@@ -25,6 +46,7 @@ can natively do," not "everything a JS rendering library can do."
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +57,8 @@ from pptx.util import Inches, Pt
 
 from artifactkit.core.backend import ValidationResult
 from artifactkit.core.models import ArtifactSpec, PresentationSpec, Theme
+
+logger = logging.getLogger("artifactkit")
 
 _DEFAULT_LAYOUT_NAMES = {
     "title": 0,
@@ -48,6 +72,56 @@ _DEFAULT_LAYOUT_NAMES = {
 # Layout names treated as "hero" slides (gradient background, decorative
 # shape) rather than "content" slides (light background, accent bar).
 _HERO_LAYOUTS = {"title", "section_header"}
+
+
+@dataclass(frozen=True)
+class PlaceholderInfo:
+    """One placeholder on a slide layout, as reported by inspect_template()."""
+
+    idx: int
+    name: str  # shape name, e.g. "Content Placeholder 2" -- usable as a Slide.placeholders key
+    type: str  # placeholder_format.type name, e.g. "TITLE", "BODY", "PICTURE", "SUBTITLE"
+
+
+@dataclass(frozen=True)
+class LayoutInfo:
+    """One slide layout, as reported by inspect_template()."""
+
+    index: int  # position in presentation.slide_layouts -- usable as Slide.layout
+    name: str  # layout name, e.g. "Title and Content" -- also usable as Slide.layout
+    placeholders: tuple[PlaceholderInfo, ...]
+
+
+@dataclass(frozen=True)
+class TemplateInfo:
+    """Result of inspect_template(): every layout in a .pptx template."""
+
+    layouts: tuple[LayoutInfo, ...]
+
+
+def inspect_template(template_path: str) -> TemplateInfo:
+    """Reads a .pptx file and reports its slide layouts and each
+    layout's placeholders, without rendering anything. Call this
+    before building a PresentationSpec that targets a custom
+    template, so slide.placeholders keys ("idx:N" or an exact
+    placeholder name) can be chosen correctly instead of guessed."""
+    presentation = Presentation(template_path)
+    layouts = tuple(
+        LayoutInfo(
+            index=index,
+            name=layout.name,
+            placeholders=tuple(
+                PlaceholderInfo(
+                    idx=ph.placeholder_format.idx,
+                    name=ph.name,
+                    type=str(ph.placeholder_format.type) if ph.placeholder_format.type is not None else "UNKNOWN",
+                )
+                for ph in layout.placeholders
+            ),
+        )
+        for index, layout in enumerate(presentation.slide_layouts)
+    )
+    return TemplateInfo(layouts=layouts)
 
 
 @dataclass(frozen=True)
@@ -122,7 +196,7 @@ class PptxBackend:
             Presentation(spec.template_path) if spec.template_path else Presentation()
         )
         layouts_by_name = {layout.name.lower(): layout for layout in presentation.slide_layouts}
-        style = _THEME_STYLES.get(spec.theme) if spec.theme else None
+        style = self._resolve_theme_style(spec)
 
         for slide_spec in spec.slides:
             layout = self._resolve_layout(presentation, layouts_by_name, slide_spec.layout)
@@ -140,6 +214,17 @@ class PptxBackend:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         presentation.save(output_path)
 
+    def _resolve_theme_style(self, spec: PresentationSpec) -> _ThemeStyle | None:
+        if spec.theme is None:
+            return None
+        if spec.template_path is not None:
+            logger.warning(
+                "artifact.pptx.theme_skipped_for_template",
+                extra={"theme": spec.theme.value, "template_path": spec.template_path},
+            )
+            return None
+        return _THEME_STYLES.get(spec.theme)
+
     def _resolve_layout(self, presentation, layouts_by_name: dict, name: str):
         key = name.lower()
         if key in layouts_by_name:
@@ -153,18 +238,43 @@ class PptxBackend:
         return presentation.slide_layouts[0]
 
     def _fill_placeholders(self, slide, placeholders: dict[str, str]) -> None:
-        placeholder_by_type = {ph.placeholder_format.type: ph for ph in slide.placeholders}
+        all_placeholders = list(slide.placeholders)
+        by_idx = {ph.placeholder_format.idx: ph for ph in all_placeholders}
+        by_name = {ph.name: ph for ph in all_placeholders}
+        title_idx = slide.shapes.title.placeholder_format.idx if slide.shapes.title is not None else None
+        filled_idx: set[int] = set()
         remaining = dict(placeholders)
 
-        # Prefer matching by placeholder name/idx convention: "title" and
-        # "body" are handled explicitly since they're the overwhelming
-        # majority case; anything else fills placeholders positionally
-        # in declaration order.
         if "title" in remaining and slide.shapes.title is not None:
             slide.shapes.title.text = remaining.pop("title")
+            filled_idx.add(title_idx)
 
-        other_placeholders = [ph for ph in slide.placeholders if ph != slide.shapes.title]
-        for ph, (_, text) in zip(other_placeholders, remaining.items()):
+        # Precise targeting: "idx:N" keys, resolved against this layout's
+        # actual placeholder indices (see inspect_template()).
+        for key in [k for k in remaining if k.startswith("idx:")]:
+            try:
+                idx = int(key[len("idx:"):])
+            except ValueError:
+                continue
+            ph = by_idx.get(idx)
+            if ph is not None and idx not in filled_idx:
+                ph.text_frame.text = remaining.pop(key)
+                filled_idx.add(idx)
+
+        # Precise targeting: exact placeholder shape name.
+        for key in [k for k in remaining if k in by_name]:
+            ph = by_name[key]
+            idx = ph.placeholder_format.idx
+            if idx not in filled_idx:
+                ph.text_frame.text = remaining.pop(key)
+                filled_idx.add(idx)
+
+        # Positional fallback for whatever's left, into whatever
+        # placeholders weren't already filled above -- the original
+        # behavior, preserved so old specs (just "title" + one other
+        # key) keep working without needing precise targeting.
+        leftover_placeholders = [ph for ph in all_placeholders if ph.placeholder_format.idx not in filled_idx]
+        for ph, (_, text) in zip(leftover_placeholders, remaining.items()):
             ph.text_frame.text = text
 
     def _apply_theme(self, slide, presentation, style: _ThemeStyle, is_hero: bool) -> None:

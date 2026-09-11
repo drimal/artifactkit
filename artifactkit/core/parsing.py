@@ -10,6 +10,9 @@ import binascii
 
 from artifactkit.core.errors import ArtifactError
 from artifactkit.core.models import (
+    CellValueRule,
+    ColorScaleRule,
+    DataBarRule,
     DocumentSpec,
     FileBundleSpec,
     Heading,
@@ -125,6 +128,27 @@ def parse_presentation_spec(d: dict) -> PresentationSpec:
         raise ArtifactError(f"invalid theme in presentation spec: {exc}") from exc
 
 
+def _parse_conditional_format_rule(d: dict):
+    rule_type = d.get("type")
+    if rule_type == "color_scale":
+        return ColorScaleRule(cell_range=d["cell_range"], colors=tuple(d["colors"]))
+    if rule_type == "cell_value":
+        return CellValueRule(
+            cell_range=d["cell_range"],
+            operator=d["operator"],
+            values=tuple(d["values"]),
+            fill_hex=d["fill_hex"],
+            font_hex=d.get("font_hex"),
+            bold=d.get("bold", False),
+        )
+    if rule_type == "data_bar":
+        return DataBarRule(cell_range=d["cell_range"], color_hex=d["color_hex"])
+    raise ArtifactError(
+        f"unknown conditional format rule type {rule_type!r}; "
+        "expected one of 'color_scale', 'cell_value', 'data_bar'"
+    )
+
+
 def parse_workbook_spec(d: dict) -> WorkbookSpec:
     try:
         sheets = tuple(
@@ -133,6 +157,9 @@ def parse_workbook_spec(d: dict) -> WorkbookSpec:
                 header=tuple(s["header"]) if "header" in s else None,
                 rows=tuple(tuple(row) for row in s.get("rows", [])),
                 formulas=s.get("formulas", {}),
+                conditional_formats=tuple(
+                    _parse_conditional_format_rule(r) for r in s.get("conditional_formats", [])
+                ),
             )
             for s in d["sheets"]
         )
@@ -144,7 +171,7 @@ def parse_workbook_spec(d: dict) -> WorkbookSpec:
     except KeyError as exc:
         raise ArtifactError(f"workbook spec missing required field: {exc}") from exc
     except ValueError as exc:
-        raise ArtifactError(f"invalid theme in workbook spec: {exc}") from exc
+        raise ArtifactError(f"invalid theme or conditional format rule in workbook spec: {exc}") from exc
 
 
 def parse_file_bundle_spec(d: dict) -> FileBundleSpec:

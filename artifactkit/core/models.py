@@ -252,6 +252,74 @@ class PresentationSpec:
 # --------------------------------------------------------------------------
 
 
+_CELL_VALUE_OPERATORS = frozenset({
+    "greaterThan", "lessThan", "equal", "notEqual",
+    "greaterThanOrEqual", "lessThanOrEqual", "between",
+})
+_TWO_VALUE_OPERATORS = frozenset({"between"})
+
+
+@dataclass(frozen=True)
+class ColorScaleRule:
+    """A 2- or 3-color heatmap over a cell range, low to high — the
+    classic red/yellow/green "which values stand out" visualization."""
+
+    cell_range: str  # e.g. "B2:B10"
+    colors: tuple[str, ...]  # 2 or 3 hex colors, low -> (mid) -> high
+
+    def __post_init__(self) -> None:
+        if not self.cell_range:
+            raise ValueError("ColorScaleRule.cell_range must not be empty")
+        if len(self.colors) not in (2, 3):
+            raise ValueError(
+                f"ColorScaleRule.colors must have 2 or 3 colors, got {len(self.colors)}"
+            )
+
+
+@dataclass(frozen=True)
+class CellValueRule:
+    """Highlights cells whose value satisfies a comparison (e.g. > 100)
+    with a fill color and optional font styling."""
+
+    cell_range: str
+    operator: str  # one of _CELL_VALUE_OPERATORS
+    values: tuple[str, ...]  # 1 value normally, 2 for "between"
+    fill_hex: str
+    font_hex: str | None = None
+    bold: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.cell_range:
+            raise ValueError("CellValueRule.cell_range must not be empty")
+        if self.operator not in _CELL_VALUE_OPERATORS:
+            raise ValueError(
+                f"CellValueRule.operator must be one of {sorted(_CELL_VALUE_OPERATORS)}, "
+                f"got {self.operator!r}"
+            )
+        expected = 2 if self.operator in _TWO_VALUE_OPERATORS else 1
+        if len(self.values) != expected:
+            raise ValueError(
+                f"CellValueRule with operator {self.operator!r} needs {expected} "
+                f"value(s), got {len(self.values)}"
+            )
+
+
+@dataclass(frozen=True)
+class DataBarRule:
+    """An in-cell bar proportional to the cell's value relative to the
+    range's min/max — quick visual scanning without reading numbers."""
+
+    cell_range: str
+    color_hex: str
+
+    def __post_init__(self) -> None:
+        if not self.cell_range:
+            raise ValueError("DataBarRule.cell_range must not be empty")
+
+
+ConditionalFormatRule = ColorScaleRule | CellValueRule | DataBarRule
+
+
 @dataclass(frozen=True)
 class Sheet:
     """One worksheet. formulas maps a cell reference to a formula
@@ -266,6 +334,7 @@ class Sheet:
     header: tuple[str, ...] | None = None
     rows: tuple[tuple[str | int | float | None, ...], ...] = field(default_factory=tuple)
     formulas: dict[str, str] = field(default_factory=dict)
+    conditional_formats: tuple[ConditionalFormatRule, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not self.name:

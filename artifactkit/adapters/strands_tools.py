@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from strands import tool
 
+from artifactkit.backends.pptx_backend import inspect_template
 from artifactkit.core.destinations import destination_from_uri
 from artifactkit.core.errors import ArtifactError
 from artifactkit.core.models import ArtifactFormat
@@ -32,6 +33,7 @@ def _result_to_dict(result: ArtifactResult) -> dict:
         "format": result.format.value,
         "size_bytes": result.size_bytes,
         "write_attempts": result.write_attempts,
+        "operation_id": result.operation_id,
         "shareable_url": result.presigned_url,
         "shareable_url_expires_at": (
             result.presigned_expires_at.isoformat() if result.presigned_expires_at else None
@@ -46,6 +48,7 @@ def _delivery_result_to_dict(result: FileDeliveryResult) -> dict:
         "file_count": result.file_count,
         "total_size_bytes": result.total_size_bytes,
         "write_attempts": result.write_attempts,
+        "operation_id": result.operation_id,
         "shareable_url": result.presigned_url,
         "shareable_url_expires_at": (
             result.presigned_expires_at.isoformat() if result.presigned_expires_at else None
@@ -199,4 +202,32 @@ def deliver_files(
         )
         return _delivery_result_to_dict(result)
     except ArtifactError as exc:
+        return {"error": str(exc), "error_type": type(exc).__name__}
+
+
+@tool
+def inspect_pptx_template(template_path: str) -> dict:
+    """Reads a .pptx template file and reports its slide layouts and
+    each layout's placeholders (index, shape name, type), without
+    rendering anything. Call this before building a create_pptx spec
+    that targets a custom template, so the layout name and
+    placeholder keys ("idx:N" or an exact placeholder name) can be
+    chosen correctly instead of guessed.
+    """
+    try:
+        info = inspect_template(template_path)
+        return {
+            "layouts": [
+                {
+                    "index": layout.index,
+                    "name": layout.name,
+                    "placeholders": [
+                        {"idx": ph.idx, "name": ph.name, "type": ph.type}
+                        for ph in layout.placeholders
+                    ],
+                }
+                for layout in info.layouts
+            ]
+        }
+    except Exception as exc:
         return {"error": str(exc), "error_type": type(exc).__name__}

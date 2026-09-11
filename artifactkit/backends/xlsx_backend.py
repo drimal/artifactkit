@@ -16,6 +16,13 @@ coloring every other row, which is both less code and matches what
 Excel users already recognize as "a formatted table." Only applies to
 sheets that have a header; there's no sensible header row or data
 range to style otherwise.
+
+Conditional formatting: Sheet.conditional_formats renders via
+openpyxl's ColorScaleRule/CellIsRule/DataBarRule -- one dispatch
+method per artifactkit rule type, each translating to the matching
+openpyxl rule and attached via worksheet.conditional_formatting.add().
+Applied independently of theme; a sheet can have both, neither, or
+just one.
 """
 
 from __future__ import annotations
@@ -25,12 +32,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import openpyxl
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.formatting.rule import ColorScaleRule as OpenpyxlColorScaleRule
+from openpyxl.formatting.rule import DataBarRule as OpenpyxlDataBarRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from artifactkit.core.backend import ValidationResult
-from artifactkit.core.models import ArtifactSpec, Theme, WorkbookSpec
+from artifactkit.core.models import (
+    ArtifactSpec,
+    CellValueRule,
+    ColorScaleRule,
+    DataBarRule,
+    Theme,
+    WorkbookSpec,
+)
 
 _HEADER_FONT = Font(bold=True)
 
@@ -99,6 +116,9 @@ class XlsxBackend:
             if style is not None and sheet_spec.header:
                 self._apply_theme(sheet, sheet_spec, style, sheet_index)
 
+            for rule in sheet_spec.conditional_formats:
+                self._apply_conditional_format(sheet, rule)
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
         workbook.save(output_path)
 
@@ -132,6 +152,42 @@ class XlsxBackend:
                 showColumnStripes=False,
             )
             sheet.add_table(table)
+
+    def _apply_conditional_format(self, sheet, rule) -> None:
+        if isinstance(rule, ColorScaleRule):
+            self._apply_color_scale(sheet, rule)
+        elif isinstance(rule, CellValueRule):
+            self._apply_cell_value_rule(sheet, rule)
+        elif isinstance(rule, DataBarRule):
+            self._apply_data_bar(sheet, rule)
+        else:  # pragma: no cover - guards against future rule types
+            raise TypeError(
+                f"XlsxBackend has no renderer for conditional format rule type {type(rule).__name__}"
+            )
+
+    def _apply_color_scale(self, sheet, rule: ColorScaleRule) -> None:
+        if len(rule.colors) == 2:
+            cf_rule = OpenpyxlColorScaleRule(
+                start_type="min", start_color=rule.colors[0],
+                end_type="max", end_color=rule.colors[1],
+            )
+        else:
+            cf_rule = OpenpyxlColorScaleRule(
+                start_type="min", start_color=rule.colors[0],
+                mid_type="percentile", mid_value=50, mid_color=rule.colors[1],
+                end_type="max", end_color=rule.colors[2],
+            )
+        sheet.conditional_formatting.add(rule.cell_range, cf_rule)
+
+    def _apply_cell_value_rule(self, sheet, rule: CellValueRule) -> None:
+        fill = PatternFill(start_color=rule.fill_hex, end_color=rule.fill_hex, fill_type="solid")
+        font = Font(color=rule.font_hex, bold=rule.bold) if (rule.font_hex or rule.bold) else None
+        cf_rule = CellIsRule(operator=rule.operator, formula=list(rule.values), fill=fill, font=font)
+        sheet.conditional_formatting.add(rule.cell_range, cf_rule)
+
+    def _apply_data_bar(self, sheet, rule: DataBarRule) -> None:
+        cf_rule = OpenpyxlDataBarRule(start_type="min", end_type="max", color=rule.color_hex)
+        sheet.conditional_formatting.add(rule.cell_range, cf_rule)
 
     def _autosize_columns(self, sheet) -> None:
         for col_cells in sheet.columns:
