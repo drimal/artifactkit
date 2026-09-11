@@ -66,9 +66,12 @@ def create_docx(
     """Create a Word document from a structured content spec and write it
     to destination_uri (e.g. "s3://my-bucket/reports" or "/local/dir").
 
-    spec shape: {"title": str, "blocks": [block, ...]}
+    spec shape: {"title": str, "blocks": [block, ...], "base_filename": str|None, "theme": str|None}
     block types: heading, paragraph, list, table, image, page_break -
     each is a dict with a "type" key plus that block's fields.
+    theme, if set, is one of "vibrant", "corporate", "minimal" - colors
+    the title/headings, adds an accent rule under the title, and styles
+    table header rows. Omit it for unstyled default output.
     """
     try:
         document_spec = parse_document_spec(spec)
@@ -95,9 +98,15 @@ def create_pptx(
     """Create a PowerPoint deck from a structured content spec and write
     it to destination_uri.
 
-    spec shape: {"title": str, "slides": [slide, ...], "template_path": str|None}
+    spec shape: {"title": str, "slides": [slide, ...], "template_path": str|None,
+                 "base_filename": str|None, "theme": str|None}
     slide shape: {"layout": str, "placeholders": {"title": str, ...},
                   "images": [...], "speaker_notes": str|None}
+    theme, if set, is one of "vibrant", "corporate", "minimal" - title/
+    section_header slides get a gradient background with a decorative
+    shape, other slides get a clean background with an accent bar.
+    Ignored (with a warning logged) if template_path is also set, since
+    a custom template's own design should not be overridden.
     """
     try:
         presentation_spec = parse_presentation_spec(spec)
@@ -124,9 +133,20 @@ def create_xlsx(
     """Create an Excel workbook from a structured content spec and write
     it to destination_uri.
 
-    spec shape: {"sheets": [sheet, ...]}
+    spec shape: {"sheets": [sheet, ...], "base_filename": str|None, "theme": str|None}
     sheet shape: {"name": str, "header": [str, ...]|None,
-                  "rows": [[cell, ...], ...], "formulas": {"D2": "=B2*C2"}}
+                  "rows": [[cell, ...], ...], "formulas": {"D2": "=B2*C2"},
+                  "conditional_formats": [rule, ...]}
+    conditional_formats rule types: {"type": "color_scale", "cell_range": str, "colors": [str, ...]}
+    (2 or 3 hex colors), {"type": "cell_value", "cell_range": str,
+    "operator": str, "values": [str, ...], "fill_hex": str, "font_hex": str|None,
+    "bold": bool} (operator is one of greaterThan/lessThan/equal/notEqual/
+    greaterThanOrEqual/lessThanOrEqual/between - between needs 2 values,
+    everything else needs 1), or {"type": "data_bar", "cell_range": str, "color_hex": str}.
+    theme, if set, is one of "vibrant", "corporate", "minimal" - fills the
+    header row, sets the sheet tab color, freezes the header row, and
+    wraps the data in a native Excel Table with banded rows. Only applies
+    to sheets that have a header.
     """
     try:
         workbook_spec = parse_workbook_spec(spec)
@@ -151,7 +171,11 @@ def create_pdf(
     include_shareable_link: bool = False,
 ) -> dict:
     """Create a PDF from a structured content spec and write it to
-    destination_uri. Uses the same spec shape as create_docx."""
+    destination_uri. Uses the same spec shape as create_docx, including
+    base_filename. Note: "theme" is accepted in the spec but currently
+    has no visual effect on PDF output - PdfBackend does not implement
+    it. Use create_docx instead if styled output matters.
+    """
     try:
         document_spec = parse_document_spec(spec)
         destination = destination_from_uri(destination_uri)

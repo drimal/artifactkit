@@ -109,6 +109,13 @@ class ArtifactTracingHookProvider(HookProvider):
     structured logs (docs/observability.md) instead of the two living
     in separate systems correlated only by timestamp guessing.
 
+    Logs both outcomes of an artifactkit tool call: success (INFO,
+    "strands.artifact_tool_call", carries operation_id) and failure
+    (WARNING, "strands.artifact_tool_call_failed", carries error/
+    error_type from the tool's error response). A failed call has no
+    operation_id to correlate by -- the strands_invocation_id plus the
+    tool name and error is what's available instead.
+
     Verified mechanism: invocation_state is one shared dict object
     threaded from BeforeInvocationEvent through every tool-call event
     within that invocation (confirmed against strands-agents' tool
@@ -131,19 +138,37 @@ class ArtifactTracingHookProvider(HookProvider):
     def _on_after_tool_call(self, event: AfterToolCallEvent) -> None:
         if event.tool_use["name"] not in self._tool_names:
             return
-        artifact_operation_id = self._extract_operation_id(event.result)
+        payload = self._extract_payload(event.result)
+        if payload is None:
+            return
+
+        strands_invocation_id = event.invocation_state.get("strands_invocation_id")
+
+        if "error" in payload:
+            logger.warning(
+                "strands.artifact_tool_call_failed",
+                extra={
+                    "strands_invocation_id": strands_invocation_id,
+                    "tool_name": event.tool_use["name"],
+                    "error": payload.get("error"),
+                    "error_type": payload.get("error_type"),
+                },
+            )
+            return
+
+        artifact_operation_id = payload.get("operation_id")
         if artifact_operation_id is None:
             return
         logger.info(
             "strands.artifact_tool_call",
             extra={
-                "strands_invocation_id": event.invocation_state.get("strands_invocation_id"),
+                "strands_invocation_id": strands_invocation_id,
                 "artifactkit_operation_id": artifact_operation_id,
                 "tool_name": event.tool_use["name"],
             },
         )
 
-    def _extract_operation_id(self, result) -> str | None:
+    def _extract_payload(self, result) -> dict | None:
         # A @tool-decorated function's plain dict return value is
         # JSON-serialized by Strands into result["content"][0]["text"]
         # (confirmed by actually invoking a tool through Strands'
@@ -152,7 +177,7 @@ class ArtifactTracingHookProvider(HookProvider):
             payload = json.loads(result["content"][0]["text"])
         except (KeyError, IndexError, TypeError, json.JSONDecodeError):
             return None
-        return payload.get("operation_id") if isinstance(payload, dict) else None
+        return payload if isinstance(payload, dict) else None
 
 
 class ArtifactAutoDeliveryHookProvider(HookProvider):

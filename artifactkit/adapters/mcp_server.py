@@ -65,7 +65,13 @@ def create_docx(
     spec: dict, destination_uri: str, filename: str | None = None, include_shareable_link: bool = False
 ) -> dict:
     """Create a Word document from a structured content spec. See
-    parse_document_spec for the expected spec shape."""
+    parse_document_spec for the expected spec shape.
+
+    theme, if set on the spec, is one of "vibrant", "corporate",
+    "minimal" - colors the title/headings, adds an accent rule under
+    the title, and styles table header rows. Omit it for unstyled
+    default output.
+    """
     try:
         result = _service.create(
             parse_document_spec(spec),
@@ -84,7 +90,16 @@ def create_pptx(
     spec: dict, destination_uri: str, filename: str | None = None, include_shareable_link: bool = False
 ) -> dict:
     """Create a PowerPoint deck from a structured content spec. See
-    parse_presentation_spec for the expected spec shape."""
+    parse_presentation_spec for the expected spec shape.
+
+    theme, if set on the spec, is one of "vibrant", "corporate",
+    "minimal" - title/section_header slides get a gradient background
+    with a decorative shape, other slides get a clean background with
+    an accent bar. Ignored (with a warning logged) if template_path is
+    also set, since a custom template's own design should not be
+    overridden. Call inspect_pptx_template first to see a custom
+    template's actual layouts and placeholders before targeting them.
+    """
     try:
         result = _service.create(
             parse_presentation_spec(spec),
@@ -103,7 +118,13 @@ def create_xlsx(
     spec: dict, destination_uri: str, filename: str | None = None, include_shareable_link: bool = False
 ) -> dict:
     """Create an Excel workbook from a structured content spec. See
-    parse_workbook_spec for the expected spec shape."""
+    parse_workbook_spec for the expected spec shape.
+
+    theme, if set on the spec, is one of "vibrant", "corporate",
+    "minimal" - fills the header row, sets the sheet tab color,
+    freezes the header row, and wraps the data in a native Excel Table
+    with banded rows. Only applies to sheets that have a header.
+    """
     try:
         result = _service.create(
             parse_workbook_spec(spec),
@@ -122,7 +143,10 @@ def create_pdf(
     spec: dict, destination_uri: str, filename: str | None = None, include_shareable_link: bool = False
 ) -> dict:
     """Create a PDF from a structured content spec. Uses the same spec
-    shape as create_docx."""
+    shape as create_docx. Note: "theme" is accepted in the spec but
+    currently has no visual effect on PDF output - PdfBackend does not
+    implement it. Use create_docx instead if styled output matters.
+    """
     try:
         result = _service.create(
             parse_document_spec(spec),
