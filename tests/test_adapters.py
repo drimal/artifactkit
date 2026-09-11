@@ -84,6 +84,17 @@ class TestStrandsAdapter:
         )
         assert "error" not in pdf_result
 
+    def test_inspect_pptx_template_reports_layouts(self, tmp_path):
+        from pptx import Presentation as PptxPresentation
+
+        template_path = tmp_path / "default.pptx"
+        PptxPresentation().save(template_path)
+
+        result = strands_tools.inspect_pptx_template(template_path=str(template_path))
+        assert "error" not in result
+        layout_names = {l["name"] for l in result["layouts"]}
+        assert "Two Content" in layout_names
+
 
 class TestMcpAdapter:
     def test_create_docx_writes_and_returns_location(self, tmp_path):
@@ -116,3 +127,24 @@ class TestMcpAdapter:
     def test_mcp_server_registers_all_four_document_tools_plus_deliver(self):
         tool_names = {t.name for t in mcp_server.mcp._tool_manager.list_tools()}
         assert {"create_docx", "create_pptx", "create_xlsx", "create_pdf", "deliver_files"} <= tool_names
+
+    def test_mcp_server_registers_inspect_pptx_template(self):
+        tool_names = {t.name for t in mcp_server.mcp._tool_manager.list_tools()}
+        assert "inspect_pptx_template" in tool_names
+
+    def test_inspect_pptx_template_reports_layouts(self, tmp_path):
+        from pptx import Presentation as PptxPresentation
+
+        template_path = tmp_path / "default.pptx"
+        PptxPresentation().save(template_path)
+
+        result = mcp_server.inspect_pptx_template(template_path=str(template_path))
+        assert "error" not in result
+        layout_names = {l["name"] for l in result["layouts"]}
+        assert "Two Content" in layout_names
+        two_content = next(l for l in result["layouts"] if l["name"] == "Two Content")
+        assert len(two_content["placeholders"]) == 6
+
+    def test_inspect_pptx_template_returns_error_for_missing_file(self):
+        result = mcp_server.inspect_pptx_template(template_path="/tmp/does_not_exist_artifactkit.pptx")
+        assert "error" in result

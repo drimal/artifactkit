@@ -107,3 +107,31 @@ def test_parse_file_bundle_spec_bundle_filename_passthrough():
         "bundle_filename": "archive",
     })
     assert spec.bundle_filename == "archive"
+
+
+def test_parse_workbook_spec_with_conditional_formats():
+    spec = parse_workbook_spec({
+        "sheets": [{
+            "name": "Data",
+            "header": ["A", "B"],
+            "rows": [["1", "10"], ["2", "20"]],
+            "conditional_formats": [
+                {"type": "color_scale", "cell_range": "B2:B3", "colors": ["FF0000", "00FF00"]},
+                {"type": "cell_value", "cell_range": "B2:B3", "operator": "greaterThan", "values": ["15"], "fill_hex": "C6EFCE"},
+                {"type": "data_bar", "cell_range": "B2:B3", "color_hex": "638EC6"},
+            ],
+        }]
+    })
+    assert len(spec.sheets[0].conditional_formats) == 3
+
+
+def test_parse_workbook_spec_rejects_unknown_rule_type():
+    with pytest.raises(ArtifactError, match="unknown conditional format rule type"):
+        parse_workbook_spec({"sheets": [{"name": "X", "conditional_formats": [{"type": "bogus"}]}]})
+
+
+def test_parse_workbook_spec_rejects_missing_rule_field():
+    with pytest.raises(ArtifactError, match="missing required field"):
+        parse_workbook_spec({
+            "sheets": [{"name": "X", "conditional_formats": [{"type": "color_scale", "cell_range": "A1:A2"}]}]
+        })

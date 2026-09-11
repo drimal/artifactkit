@@ -23,6 +23,14 @@ wrong, the docstring is the thing to fix, not this page.
 
 ::: artifactkit.Theme
 
+::: artifactkit.TemplateInfo
+
+::: artifactkit.LayoutInfo
+
+::: artifactkit.PlaceholderInfo
+
+::: artifactkit.inspect_template
+
 ::: artifactkit.WorkbookSpec
 
 ### Blocks
@@ -48,6 +56,14 @@ wrong, the docstring is the thing to fix, not this page.
 ::: artifactkit.Slide
 
 ::: artifactkit.Sheet
+
+### Conditional formatting
+
+::: artifactkit.ColorScaleRule
+
+::: artifactkit.CellValueRule
+
+::: artifactkit.DataBarRule
 
 ## Arbitrary file delivery
 

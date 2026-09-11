@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from artifactkit.backends.docx_backend import DocxBackend
 from artifactkit.backends.pdf_backend import PdfBackend
 from artifactkit.backends.pptx_backend import PptxBackend
@@ -357,3 +359,270 @@ def test_xlsx_no_theme_leaves_default_styling_untouched(tmp_path):
     sheet = wb["Data"]
     assert len(sheet.tables) == 0
     assert sheet.sheet_properties.tabColor is None
+
+
+def test_inspect_template_reports_layouts_and_placeholders(tmp_path):
+    from artifactkit.backends.pptx_backend import inspect_template
+    from pptx import Presentation as PptxPresentation
+
+    template_path = tmp_path / "default.pptx"
+    PptxPresentation().save(template_path)
+
+    info = inspect_template(str(template_path))
+    assert len(info.layouts) == 11  # python-pptx's default template
+
+    two_content = next(l for l in info.layouts if l.name == "Two Content")
+    assert two_content.index == 3
+    content_placeholders = [ph for ph in two_content.placeholders if "OBJECT" in ph.type]
+    assert len(content_placeholders) == 2
+    assert {ph.name for ph in content_placeholders} == {"Content Placeholder 2", "Content Placeholder 3"}
+
+
+def test_pptx_precise_idx_targeting_fills_correct_placeholder(tmp_path):
+    from pptx import Presentation as PptxPresentation
+
+    template_path = tmp_path / "default.pptx"
+    PptxPresentation().save(template_path)
+
+    backend = PptxBackend()
+    spec = PresentationSpec(
+        title="Comparison",
+        slides=(
+            Slide(
+                layout="Two Content",
+                placeholders={"title": "T", "idx:1": "left", "idx:2": "right"},
+            ),
+        ),
+        template_path=str(template_path),
+    )
+    path = tmp_path / "out.pptx"
+    backend.render(spec, path)
+
+    rendered = PptxPresentation(path)
+    by_idx = {ph.placeholder_format.idx: ph for ph in rendered.slides[0].placeholders}
+    assert by_idx[1].text_frame.text == "left"
+    assert by_idx[2].text_frame.text == "right"
+
+
+def test_pptx_precise_name_targeting_fills_correct_placeholder(tmp_path):
+    from pptx import Presentation as PptxPresentation
+
+    template_path = tmp_path / "default.pptx"
+    PptxPresentation().save(template_path)
+
+    backend = PptxBackend()
+    spec = PresentationSpec(
+        title="Comparison",
+        slides=(
+            Slide(
+                layout="Two Content",
+                placeholders={
+                    "title": "T",
+                    "Content Placeholder 2": "left by name",
+                    "Content Placeholder 3": "right by name",
+                },
+            ),
+        ),
+        template_path=str(template_path),
+    )
+    path = tmp_path / "out.pptx"
+    backend.render(spec, path)
+
+    rendered = PptxPresentation(path)
+    by_name = {ph.name: ph for ph in rendered.slides[0].placeholders}
+    assert by_name["Content Placeholder 2"].text_frame.text == "left by name"
+    assert by_name["Content Placeholder 3"].text_frame.text == "right by name"
+
+
+def test_pptx_old_style_spec_still_works_via_positional_fallback(tmp_path):
+    from pptx import Presentation as PptxPresentation
+
+    backend = PptxBackend()
+    spec = PresentationSpec(
+        title="Old style",
+        slides=(Slide(layout="title_and_body", placeholders={"title": "Hi", "body": "Detail"}),),
+    )
+    path = tmp_path / "old_style.pptx"
+    backend.render(spec, path)
+
+    rendered = PptxPresentation(path)
+    slide = rendered.slides[0]
+    non_title = [ph for ph in slide.placeholders if ph != slide.shapes.title]
+    assert slide.shapes.title.text_frame.text == "Hi"
+    assert non_title[0].text_frame.text == "Detail"
+
+
+def test_pptx_theme_skipped_when_template_path_set(tmp_path, caplog):
+    import logging as logging_module
+    from artifactkit.core.models import Theme
+    from pptx import Presentation as PptxPresentation
+
+    caplog.set_level(logging_module.WARNING, logger="artifactkit")
+    template_path = tmp_path / "default.pptx"
+    PptxPresentation().save(template_path)
+
+    backend = PptxBackend()
+    spec = PresentationSpec(
+        title="Conflict",
+        slides=(Slide(layout="title", placeholders={"title": "Should not be gradient"}),),
+        theme=Theme.VIBRANT,
+        template_path=str(template_path),
+    )
+    path = tmp_path / "conflict.pptx"
+    backend.render(spec, path)
+
+    rendered = PptxPresentation(path)
+    slide = rendered.slides[0]
+    is_gradient = slide.background.fill.type is not None and str(slide.background.fill.type).startswith("GRADIENT")
+    assert not is_gradient  # theme was skipped, template's own background stands
+
+    warnings = [r for r in caplog.records if r.message == "artifact.pptx.theme_skipped_for_template"]
+    assert len(warnings) == 1
+
+
+def test_pptx_theme_still_applies_without_template_path(tmp_path):
+    """Regression guard: the conflict-skip logic above must not
+    accidentally disable theming for the normal (no template) case."""
+    from artifactkit.core.models import Theme
+    from pptx import Presentation as PptxPresentation
+
+    backend = PptxBackend()
+    spec = PresentationSpec(
+        title="No conflict",
+        slides=(Slide(layout="title", placeholders={"title": "Should be gradient"}),),
+        theme=Theme.VIBRANT,
+    )
+    path = tmp_path / "themed.pptx"
+    backend.render(spec, path)
+
+    rendered = PptxPresentation(path)
+    slide = rendered.slides[0]
+    assert str(slide.background.fill.type).startswith("GRADIENT")
+
+
+def test_xlsx_color_scale_rule_three_color(tmp_path):
+    from artifactkit.core.models import ColorScaleRule
+    import openpyxl as openpyxl_module
+
+    backend = XlsxBackend()
+    spec = WorkbookSpec(sheets=(
+        Sheet(
+            name="Data", header=("A", "B"), rows=(("x", 10), ("y", 90)),
+            conditional_formats=(ColorScaleRule(cell_range="B2:B3", colors=("F8696B", "FFEB84", "63BE7B")),),
+        ),
+    ))
+    path = tmp_path / "cf.xlsx"
+    backend.render(spec, path)
+
+    wb = openpyxl_module.load_workbook(path)
+    ws = wb["Data"]
+    all_rules = [r for rules in ws.conditional_formatting._cf_rules.values() for r in rules]
+    color_scale = next(r for r in all_rules if r.type == "colorScale")
+    colors = [c.rgb[-6:] for c in color_scale.colorScale.color]
+    assert colors == ["F8696B", "FFEB84", "63BE7B"]
+
+
+def test_xlsx_color_scale_rule_two_color(tmp_path):
+    from artifactkit.core.models import ColorScaleRule
+    import openpyxl as openpyxl_module
+
+    backend = XlsxBackend()
+    spec = WorkbookSpec(sheets=(
+        Sheet(
+            name="Data", header=("A",), rows=(("1",), ("2",)),
+            conditional_formats=(ColorScaleRule(cell_range="A2:A3", colors=("FF0000", "00FF00")),),
+        ),
+    ))
+    path = tmp_path / "cf2.xlsx"
+    backend.render(spec, path)
+
+    wb = openpyxl_module.load_workbook(path)
+    ws = wb["Data"]
+    all_rules = [r for rules in ws.conditional_formatting._cf_rules.values() for r in rules]
+    color_scale = next(r for r in all_rules if r.type == "colorScale")
+    assert len(color_scale.colorScale.cfvo) == 2
+
+
+def test_xlsx_cell_value_rule(tmp_path):
+    from artifactkit.core.models import CellValueRule
+    import openpyxl as openpyxl_module
+
+    backend = XlsxBackend()
+    spec = WorkbookSpec(sheets=(
+        Sheet(
+            name="Data", header=("A", "B"), rows=(("x", 10), ("y", 90)),
+            conditional_formats=(
+                CellValueRule(
+                    cell_range="B2:B3", operator="greaterThan", values=("50",),
+                    fill_hex="C6EFCE", font_hex="006100", bold=True,
+                ),
+            ),
+        ),
+    ))
+    path = tmp_path / "cf3.xlsx"
+    backend.render(spec, path)
+
+    wb = openpyxl_module.load_workbook(path)
+    ws = wb["Data"]
+    all_rules = [r for rules in ws.conditional_formatting._cf_rules.values() for r in rules]
+    cell_is = next(r for r in all_rules if r.type == "cellIs")
+    assert cell_is.operator == "greaterThan"
+    assert cell_is.formula == ["50"]
+
+
+def test_xlsx_data_bar_rule(tmp_path):
+    from artifactkit.core.models import DataBarRule
+    import openpyxl as openpyxl_module
+
+    backend = XlsxBackend()
+    spec = WorkbookSpec(sheets=(
+        Sheet(
+            name="Data", header=("A",), rows=(("10",), ("20",)),
+            conditional_formats=(DataBarRule(cell_range="A2:A3", color_hex="638EC6"),),
+        ),
+    ))
+    path = tmp_path / "cf4.xlsx"
+    backend.render(spec, path)
+
+    wb = openpyxl_module.load_workbook(path)
+    ws = wb["Data"]
+    all_rules = [r for rules in ws.conditional_formatting._cf_rules.values() for r in rules]
+    data_bar = next(r for r in all_rules if r.type == "dataBar")
+    assert data_bar.dataBar.color.rgb[-6:] == "638EC6"
+
+
+def test_xlsx_no_conditional_formats_leaves_sheet_unaffected(tmp_path):
+    import openpyxl as openpyxl_module
+
+    backend = XlsxBackend()
+    spec = WorkbookSpec(sheets=(Sheet(name="Plain", header=("A",), rows=(("1",),)),))
+    path = tmp_path / "no_cf.xlsx"
+    backend.render(spec, path)
+
+    wb = openpyxl_module.load_workbook(path)
+    ws = wb["Plain"]
+    assert list(ws.conditional_formatting._cf_rules) == []
+
+
+def test_color_scale_rule_rejects_wrong_color_count():
+    from artifactkit.core.models import ColorScaleRule
+    with pytest.raises(ValueError, match="2 or 3 colors"):
+        ColorScaleRule(cell_range="A1:A2", colors=("FF0000",))
+
+
+def test_cell_value_rule_rejects_unknown_operator():
+    from artifactkit.core.models import CellValueRule
+    with pytest.raises(ValueError, match="must be one of"):
+        CellValueRule(cell_range="A1:A2", operator="bogus", values=("1",), fill_hex="FFFFFF")
+
+
+def test_cell_value_rule_rejects_wrong_value_count_for_between():
+    from artifactkit.core.models import CellValueRule
+    with pytest.raises(ValueError, match="needs 2 value"):
+        CellValueRule(cell_range="A1:A2", operator="between", values=("1",), fill_hex="FFFFFF")
+
+
+def test_data_bar_rule_rejects_empty_range():
+    from artifactkit.core.models import DataBarRule
+    with pytest.raises(ValueError, match="cell_range must not be empty"):
+        DataBarRule(cell_range="", color_hex="638EC6")

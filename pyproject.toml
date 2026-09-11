@@ -30,8 +30,8 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/drimal/artifactkit"
-Issues = "https://github.com/drimal/artifactkit/issues"
+Repository = "https://github.com/CHANGE-ME/artifactkit"
+Issues = "https://github.com/CHANGE-ME/artifactkit/issues"
 
 [project.optional-dependencies]
 s3 = ["boto3>=1.34.0"]

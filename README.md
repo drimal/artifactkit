@@ -25,12 +25,25 @@ which extras you installed.
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-pytest tests/ --cov=artifactkit --cov-report=term-missing   # 92% with all extras installed
+pytest tests/ --cov=artifactkit --cov-report=term-missing   # 93% with all extras installed (131 tests)
 ```
 
 See `PUBLISHING.md` for how to build and release to PyPI, and
 `mkdocs.yml` / `docs/` for the full documentation site (`pip install
 -e ".[docs]"` then `mkdocs serve`).
+
+## Strands hooks
+
+Beyond the tool functions, `artifactkit.adapters.strands_hooks` (under
+the `[strands]` extra) provides three optional hook providers for a
+Strands agent's lifecycle: policy enforcement (force a destination/theme
+on every artifactkit call), a tracing bridge (correlate Strands'
+invocation with artifactkit's `operation_id` in the logs), and
+auto-delivery (deliver whatever a code-execution tool wrote, without
+the agent having to remember to call `deliver_files` itself). See
+`docs/quickstart.md` for usage — all three were verified against the
+real `strands-agents` API (event mutability, shared invocation state,
+result serialization), not assumed from documentation.
 
 ## Observability
 
@@ -112,6 +125,17 @@ applies in whatever way fits its format — colored headings and an
 accent rule in a doc, a gradient hero slide with a decorative shape in
 a deck, a native Excel Table with banded rows and a colored tab in a
 workbook. See `docs/quickstart.md` for examples of all three.
+
+For a real branded `.pptx`, use `template_path` instead — `inspect_template()`
+reads a template's layouts and placeholders first so you can target
+them precisely (`"idx:1"` or an exact placeholder name), rather than
+guessing at what a custom template contains. `theme` and `template_path`
+don't combine: a template's own design wins.
+
+`Sheet.conditional_formats` adds real Excel conditional formatting —
+`ColorScaleRule` (heatmap), `CellValueRule` (highlight cells matching
+a comparison), `DataBarRule` (in-cell proportional bars) — independent
+of `theme`. See `docs/quickstart.md`.
 
 ## Arbitrary files (code, images, anything else)
 
