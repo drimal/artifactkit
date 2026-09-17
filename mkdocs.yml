@@ -1,6 +1,6 @@
 site_name: artifactkit
 site_description: Shared artifact-creation harness for agentic workflows
-repo_url: https://github.com/CHANGE-ME/artifactkit
+repo_url: https://github.com/drimal/artifactkit
 
 theme:
   name: material

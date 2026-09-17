@@ -8,3 +8,5 @@ dist/
 build/
 .coverage
 htmlcov/
+site/
+.DS_Store
