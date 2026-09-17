@@ -28,6 +28,10 @@ from artifactkit.core.errors import (
 from artifactkit.core.models import (
     ArtifactFormat,
     ArtifactSpec,
+    CellValueRule,
+    ColorScaleRule,
+    ConditionalFormatRule,
+    DataBarRule,
     DocumentSpec,
     FileBundleSpec,
     Heading,
@@ -48,6 +52,7 @@ from artifactkit.core.models import (
 from artifactkit.core.observability import LoggingMetricsSink, MetricsSink, NoOpMetricsSink
 from artifactkit.core.retry import RetryPolicy
 from artifactkit.core.service import ArtifactResult, ArtifactService, FileDeliveryResult
+from artifactkit.backends.pptx_backend import LayoutInfo, PlaceholderInfo, TemplateInfo, inspect_template
 
 __version__ = "0.1.0"
 
@@ -69,8 +74,16 @@ __all__ = [
     "PresentationSpec",
     "Theme",
     "Slide",
+    "TemplateInfo",
+    "LayoutInfo",
+    "PlaceholderInfo",
+    "inspect_template",
     "WorkbookSpec",
     "Sheet",
+    "ColorScaleRule",
+    "CellValueRule",
+    "DataBarRule",
+    "ConditionalFormatRule",
     "RawFile",
     "FileBundleSpec",
     "FileDeliveryResult",
