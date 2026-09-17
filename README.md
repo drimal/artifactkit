@@ -1,7 +1,6 @@
 # artifactkit
 
-Installs as `agent-artifact-kit`, imports as `artifactkit`
-(same split as `beautifulsoup4` → `bs4`: the PyPI name is descriptive
+Installs as `agent-artifact-kit`, imports as `artifactkit` the PyPI name is descriptive
 for discoverability, the import name is short because that's what you
 actually type in code).
 
