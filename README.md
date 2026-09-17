@@ -27,8 +27,7 @@ pytest tests/ -v
 pytest tests/ --cov=artifactkit --cov-report=term-missing   # 93% with all extras installed (131 tests)
 ```
 
-See `PUBLISHING.md` for how to build and release to PyPI, and
-`mkdocs.yml` / `docs/` for the full documentation site (`pip install
+See `mkdocs.yml` / `docs/` for the full documentation site (`pip install
 -e ".[docs]"` then `mkdocs serve`).
 
 ## Strands hooks
