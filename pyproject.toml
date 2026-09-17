@@ -1,6 +1,6 @@
 [project]
 name = "agent-artifact-kit"
-version = "0.1.0"
+version = "0.3.0"
 description = "Shared artifact-creation harness for agentic workflows: renders docx/pptx/xlsx/pdf or delivers arbitrary files, with pluggable destinations and verified writes. Installs as agent-artifact-kit, imports as artifactkit."
 requires-python = ">=3.10"
 readme = "README.md"
